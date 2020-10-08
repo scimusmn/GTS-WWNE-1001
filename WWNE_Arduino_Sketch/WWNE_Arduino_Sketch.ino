@@ -6,18 +6,21 @@
 //**************************************************************//
 
 #define clockPin 2
+#define dataPin 3
+#define latchPin 4
 #define voltagePin A1
 #define currentPin A2
 #define relayPin A5
 
-int dataPins[] = {0, 3, 5, 7, 9};
-int latchPins[] = {0, 10, 8, 6, 4};
+// int dataPins[] = {0, 3, 5, 7, 9};
+// int latchPins[] = {0, 10, 8, 6, 4};
 long voltage = 0;
 long current;
 long power;
-int totalBulbs = 0;
-int legNumBulbs[] = {0, 1, 0, 0, 0};
-int legIndex = 1;
+// int totalBulbs = 0;
+int numBulbs = 1; // number of bulbs on per leg.
+// int legNumBulbs[] = {0, 1, 0, 0, 0};
+// int legIndex = 1;
 
 unsigned long currentMillis, lastReadMillis = 0;
 
@@ -30,13 +33,16 @@ void setup()
   pinMode(clockPin, OUTPUT);
   pinMode(voltagePin, INPUT);
   pinMode(currentPin, INPUT);
-  for (int i = 1; i < 5; i++)
-  {
-    pinMode(latchPins[i], OUTPUT);
-    pinMode(dataPins[i], OUTPUT);
+  pinMode(latchPin, OUTPUT);
+  pinMode(dataPin, OUTPUT);
 
-    lightLeg(latchPins[i], dataPins[i], legNumBulbs[i]);
-  }
+  // for (int i = 1; i < 5; i++)
+  // {
+  //   pinMode(latchPins[i], OUTPUT);
+  //   pinMode(dataPins[i], OUTPUT);
+
+  lightLegs();
+  // }
 }
 
 void loop()
@@ -68,25 +74,17 @@ void loop()
     //    Serial.println(legNumBulbs[4]);
   }
 
-  if ((voltage > 170) && (totalBulbs < 112))
-  { //if voltage is greater than 16V
-    legIndex++;
-    if (legIndex > 4)
-      legIndex = 1;
-    legNumBulbs[legIndex]++;
-    lightLeg(latchPins[legIndex], dataPins[legIndex], legNumBulbs[legIndex]);
+  if ((voltage > 170) && (numBulbs < 28))
+  { //if voltage is greater than 17V
+    numBulbs++;
+    lightLegs();
   }
 
-  if ((voltage < 135) && (totalBulbs > 1))
+  if ((voltage < 135) && (numBulbs > 1))
   { //if voltage is less than 12V
-    legNumBulbs[legIndex]--;
-    lightLeg(latchPins[legIndex], dataPins[legIndex], legNumBulbs[legIndex]);
-    legIndex--;
-    if (legIndex < 1)
-      legIndex = 4;
+    numBulbs--;
+    lightLegs();
   }
-
-  totalBulbs = legNumBulbs[1] + legNumBulbs[2] + legNumBulbs[3] + legNumBulbs[4];
 
   if (voltage > 300)
   {
@@ -106,12 +104,12 @@ void error(void)
   digitalWrite(relayPin, LOW);
 }
 
-void lightLeg(int latchPin, int dataPin, int numBulb)
+void lightLegs()
 {
   int oddSide = 0;
   int evenSide = 0;
 
-  for (int j = 0; j < numBulb; j++)
+  for (int j = 0; j < numBulbs; j++)
   {
     // if j is even shift even light bar
     if ((j % 2) == 0)
