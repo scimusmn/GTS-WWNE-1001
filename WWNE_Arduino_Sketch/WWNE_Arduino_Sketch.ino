@@ -4,53 +4,88 @@
 //  Author   : Joe Meyer                                        //
 //  Date     : 8/17/2020                                        //
 //**************************************************************//
+#include "RTClib.h"
 
-#define clockPin 2
-#define voltagePin A1
-#define currentPin A2
-#define relayPin A5
+const int clockPin = 2;
+const int dataPin = 3;
+const int latchPin = 4;
+const int voltagePin = A1;
+const int currentPin = A2;
+const int relayPin = A3;
+const int incrementBtn = 6;
+const int resetBtn = 7;
+const long wattSecondsGoal = 120000;
+// RTC sda and scl attached to A4 and A5
 
-int dataPins[] = {0, 3, 5, 7, 9};
-int latchPins[] = {0, 10, 8, 6, 4};
+RTC_DS3231 rtc;
+
 long voltage = 0;
 long current;
 long power;
-int totalBulbs = 0;
-int legNumBulbs[] = {0, 1, 0, 0, 0};
-int legIndex = 1;
+int numBulbs = 1; // number of bulbs on per leg.
+int lastMonth;    //stores the last read value for month to compare for change
+int wattSecondsProduced;
 
-unsigned long currentMillis, lastReadMillis = 0;
+unsigned long currentMillis, lastReadMillis = 0, lastMonthCheckMillis = 0;
 
 void setup()
 {
   //Start Serial for debuging purposes
-  //  Serial.begin(115200);
-  //set pins to output because they are addressed in the main loop
+  Serial.begin(115200);
+
+  if (!rtc.begin())
+  {
+    Serial.println("Couldn't find RTC");
+    Serial.flush();
+    abort();
+  }
+
+  if (rtc.lostPower())
+  {
+    Serial.println("RTC lost power, let's set the time!");
+    // When time needs to be set on a new device, or after a power loss, the
+    // following line sets the RTC to the date & time this sketch was compiled
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // TODO ???
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+  }
+
   pinMode(relayPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
   pinMode(voltagePin, INPUT);
   pinMode(currentPin, INPUT);
-  for (int i = 1; i < 5; i++)
-  {
-    pinMode(latchPins[i], OUTPUT);
-    pinMode(dataPins[i], OUTPUT);
+  pinMode(latchPin, OUTPUT);
+  pinMode(dataPin, OUTPUT);
+  pinMode(incrementBtn, OUTPUT);
+  pinMode(resetBtn, OUTPUT);
 
-    lightLeg(latchPins[i], dataPins[i], legNumBulbs[i]);
-  }
+  lightLegs();
 }
 
 void loop()
 {
+
+  if (wattSecondsProduced > wattSecondsGoal)
+  {
+    Serial.println("increment button!");
+    // digitalWrite(incrementBtn, HIGH); //TODO
+    wattSecondsProduced = 0;
+  }
+
   currentMillis = millis();
   voltage = analogRead(voltagePin);
   current = analogRead(currentPin);
 
   voltage = map(voltage, 0, 1023, 0, 206); // store voltage as volts*10
   current = map(current, 0, 1023, 0, 682); // store current as amps*10
-  power = (current * voltage) / 100;       // power stored as watts
 
-  if ((currentMillis - lastReadMillis) > 500)
+  if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
+
+    power = (current * voltage) / 100; // power stored as watts
+    power = 50;
+    wattSecondsProduced = wattSecondsProduced + (power / 10);
     lastReadMillis = currentMillis;
     //    Serial.print(power);
     //    Serial.println(" watts");
@@ -59,34 +94,33 @@ void loop()
     //    Serial.print(" I:");
     //    Serial.print(current/10);
     //    Serial.print("   L1:");
-    //    Serial.print(legNumBulbs[1]);
-    //    Serial.print(" L2:");
-    //    Serial.print(legNumBulbs[2]);
-    //    Serial.print(" L3:");
-    //    Serial.print(legNumBulbs[3]);
-    //    Serial.print(" L4:");
-    //    Serial.println(legNumBulbs[4]);
   }
 
-  if ((voltage > 170) && (totalBulbs < 112))
-  { //if voltage is greater than 16V
-    legIndex++;
-    if (legIndex > 4)
-      legIndex = 1;
-    legNumBulbs[legIndex]++;
-    lightLeg(latchPins[legIndex], dataPins[legIndex], legNumBulbs[legIndex]);
+  if ((currentMillis - lastMonthCheckMillis) > 1000) //TODO edit so it only checks every 5 min or so.
+  {
+    DateTime now = rtc.now();
+    if (now.minute() != lastMonth) //TODO change to month
+    {
+      Serial.println("New Month!");
+      // digitalWrite(resetBtn, HIGH); //TODO
+      lastMonth = now.minute(); //TODO change to month
+    }
+    Serial.println(wattSecondsProduced);
+
+    lastMonthCheckMillis = currentMillis;
   }
 
-  if ((voltage < 135) && (totalBulbs > 1))
+  if ((voltage > 170) && (numBulbs < 28))
+  { //if voltage is greater than 17V
+    numBulbs++;
+    lightLegs();
+  }
+
+  if ((voltage < 135) && (numBulbs > 1))
   { //if voltage is less than 12V
-    legNumBulbs[legIndex]--;
-    lightLeg(latchPins[legIndex], dataPins[legIndex], legNumBulbs[legIndex]);
-    legIndex--;
-    if (legIndex < 1)
-      legIndex = 4;
+    numBulbs--;
+    lightLegs();
   }
-
-  totalBulbs = legNumBulbs[1] + legNumBulbs[2] + legNumBulbs[3] + legNumBulbs[4];
 
   if (voltage > 300)
   {
@@ -106,12 +140,12 @@ void error(void)
   digitalWrite(relayPin, LOW);
 }
 
-void lightLeg(int latchPin, int dataPin, int numBulb)
+void lightLegs()
 {
   int oddSide = 0;
   int evenSide = 0;
 
-  for (int j = 0; j < numBulb; j++)
+  for (int j = 0; j < numBulbs; j++)
   {
     // if j is even shift even light bar
     if ((j % 2) == 0)
