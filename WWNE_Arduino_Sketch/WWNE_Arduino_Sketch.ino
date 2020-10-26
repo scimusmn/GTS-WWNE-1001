@@ -60,7 +60,7 @@ void setup()
   pinMode(incrementBtn, OUTPUT);
   pinMode(resetBtn, OUTPUT);
 
-  lightLegs();
+  lightLegs(1);
 }
 
 void loop()
@@ -77,7 +77,7 @@ void loop()
   voltage = analogRead(voltagePin);
   current = analogRead(currentPin);
 
-  voltage = map(voltage, 0, 1023, 0, 206); // store voltage as volts*10
+  voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   current = map(current, 0, 1023, 0, 682); // store current as amps*10
 
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
@@ -110,22 +110,20 @@ void loop()
     lastMonthCheckMillis = currentMillis;
   }
 
-  if ((voltage > 170) && (numBulbs < 28))
-  { //if voltage is greater than 17V
-    numBulbs++;
-    lightLegs();
-  }
-
-  if ((voltage < 135) && (numBulbs > 1))
-  { //if voltage is less than 12V
+  if (voltage < 120)
     numBulbs--;
-    lightLegs();
-  }
+  if (voltage < 130)
+    numBulbs--;
+  if (voltage > 160)
+    numBulbs++;
+  if (voltage > 180)
+    numBulbs++;
 
-  if (voltage > 300)
-  {
+  numBulbs = constrain(numBulbs, 1, 28);
+  lightLegs(numBulbs);
+
+  if (voltage > 230)
     error();
-  }
 }
 
 void error(void)
@@ -135,17 +133,17 @@ void error(void)
   while (voltage > 80)
   {
     voltage = analogRead(voltagePin);
-    voltage = map(voltage, 0, 1023, 0, 206); // store voltage as volts*10
+    voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   }
   digitalWrite(relayPin, LOW);
 }
 
-void lightLegs()
+void lightLegs(int nB)
 {
   int oddSide = 0;
   int evenSide = 0;
 
-  for (int j = 0; j < numBulbs; j++)
+  for (int j = 0; j < nB; j++)
   {
     // if j is even shift even light bar
     if ((j % 2) == 0)
