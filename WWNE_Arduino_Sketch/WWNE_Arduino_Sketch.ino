@@ -6,12 +6,13 @@
 //**************************************************************//
 #include "RTClib.h"
 
-const int clockPin = 2;
-const int dataPin = 3;
+const int clockPin = 3;
+const int dataPin = 2;
 const int latchPin = 4;
-const int voltagePin = A1;
-const int currentPin = A2;
-const int relayPin = A3;
+const int voltagePin = A4;
+const int currentPin = A5;
+const int relayPin = 13;
+const int powerOutageWatch A1;
 const int incrementBtn = 6;
 const int resetBtn = 7;
 const long wattSecondsGoal = 120000;
