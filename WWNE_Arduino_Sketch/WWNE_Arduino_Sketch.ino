@@ -6,33 +6,55 @@
 //**************************************************************//
 #include "RTClib.h"
 
+#include <AutoPID.h>
+
+//pid settings and gains
+#define OUTPUT_MIN 1
+#define OUTPUT_MAX 28
+#define KP .12
+#define KI .0003
+#define KD 0
+
+//Pin assignments
 const int clockPin = 3;
 const int dataPin = 2;
 const int latchPin = 4;
 const int voltagePin = A4;
 const int currentPin = A5;
 const int relayPin = 13;
-const int powerOutageWatch A1;
+const int powerOutageWatch = A1;
 const int incrementBtn = 6;
 const int resetBtn = 7;
+
 const long wattSecondsGoal = 120000;
-// RTC sda and scl attached to A4 and A5
 
-RTC_DS3231 rtc;
-
-long voltage = 0;
+//long voltage = 0;
 long current;
 long power;
-int numBulbs = 1; // number of bulbs on per leg.
-int lastMonth;    //stores the last read value for month to compare for change
+double voltage, setPoint = 150, numBulbs;
+// int numBulbs = 1; // number of bulbs on per leg.
+int lastMonth; //stores the last read value for month to compare for change
 int wattSecondsProduced;
-
 unsigned long currentMillis, lastReadMillis = 0, lastMonthCheckMillis = 0;
+
+//input/output variables passed by reference, so they are updated automatically
+AutoPID myPID(&voltage, &setPoint, &numBulbs, OUTPUT_MIN, OUTPUT_MAX, KP, KI, KD);
+// RTC sda and scl attached to A4 and A5
+RTC_DS3231 rtc;
 
 void setup()
 {
   //Start Serial for debuging purposes
   Serial.begin(115200);
+
+  pinMode(relayPin, OUTPUT);
+  pinMode(clockPin, OUTPUT);
+  pinMode(voltagePin, INPUT);
+  pinMode(currentPin, INPUT);
+  pinMode(latchPin, OUTPUT);
+  pinMode(dataPin, OUTPUT);
+  pinMode(incrementBtn, OUTPUT);
+  pinMode(resetBtn, OUTPUT);
 
   if (!rtc.begin())
   {
@@ -52,20 +74,18 @@ void setup()
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
-  pinMode(relayPin, OUTPUT);
-  pinMode(clockPin, OUTPUT);
-  pinMode(voltagePin, INPUT);
-  pinMode(currentPin, INPUT);
-  pinMode(latchPin, OUTPUT);
-  pinMode(dataPin, OUTPUT);
-  pinMode(incrementBtn, OUTPUT);
-  pinMode(resetBtn, OUTPUT);
+  //set PID update interval to 50ms
+  myPID.setTimeStep(50);
+
+  //if voltage is more than 4V below or above setpoint, OUTPUT will be set to min or max respectively
+  myPID.setBangBang(40);
 
   lightLegs(1);
 }
 
 void loop()
 {
+  currentMillis = millis();
 
   if (wattSecondsProduced > wattSecondsGoal)
   {
@@ -74,16 +94,13 @@ void loop()
     wattSecondsProduced = 0;
   }
 
-  currentMillis = millis();
   voltage = analogRead(voltagePin);
   current = analogRead(currentPin);
-
   voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   current = map(current, 0, 1023, 0, 682); // store current as amps*10
 
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
-
     power = (current * voltage) / 100; // power stored as watts
     power = 50;
     wattSecondsProduced = wattSecondsProduced + (power / 10);
@@ -93,8 +110,7 @@ void loop()
     //    Serial.print("V:");
     //    Serial.println(voltage/10);
     //    Serial.print(" I:");
-    //    Serial.print(current/10);
-    //    Serial.print("   L1:");
+    //    Serial.println(current/10);
   }
 
   if ((currentMillis - lastMonthCheckMillis) > 1000) //TODO edit so it only checks every 5 min or so.
@@ -107,20 +123,10 @@ void loop()
       lastMonth = now.minute(); //TODO change to month
     }
     Serial.println(wattSecondsProduced);
-
     lastMonthCheckMillis = currentMillis;
   }
 
-  if (voltage < 120)
-    numBulbs--;
-  if (voltage < 130)
-    numBulbs--;
-  if (voltage > 160)
-    numBulbs++;
-  if (voltage > 180)
-    numBulbs++;
-
-  numBulbs = constrain(numBulbs, 1, 28);
+  myPID.run(); //call every loop, updates automatically at certain time interval
   lightLegs(numBulbs);
 
   if (voltage > 230)
@@ -129,7 +135,7 @@ void loop()
 
 void error(void)
 {
-  //  Serial.print("Over Voltage Error");
+  Serial.print("Over Voltage Error");
   digitalWrite(relayPin, HIGH);
   while (voltage > 80)
   {
