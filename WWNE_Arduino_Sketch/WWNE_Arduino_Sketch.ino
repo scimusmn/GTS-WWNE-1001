@@ -11,16 +11,16 @@
 //pid settings and gains
 #define OUTPUT_MIN 1
 #define OUTPUT_MAX 28
-#define KP .12
-#define KI .0003
-#define KD 0
+#define KP .3
+#define KI 0.5
+#define KD 2000
 
 //Pin assignments
 const int clockPin = 3;
 const int dataPin = 2;
 const int latchPin = 4;
-const int voltagePin = A4;
-const int currentPin = A5;
+const int voltagePin = A2;
+const int currentPin = A3;
 const int relayPin = 13;
 const int powerOutageWatch = A1;
 const int incrementBtn = 6;
@@ -31,7 +31,7 @@ const long wattSecondsGoal = 120000;
 //long voltage = 0;
 long current;
 long power;
-double voltage, setPoint = 150, numBulbs;
+double voltage, setPoint = 140, numBulbs = 1;
 // int numBulbs = 1; // number of bulbs on per leg.
 int lastMonth; //stores the last read value for month to compare for change
 int wattSecondsProduced;
@@ -46,6 +46,7 @@ void setup()
 {
   //Start Serial for debuging purposes
   Serial.begin(115200);
+  Serial.println("WWNE running");
 
   pinMode(relayPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
@@ -75,12 +76,12 @@ void setup()
   }
 
   //set PID update interval to 50ms
-  myPID.setTimeStep(50);
+  myPID.setTimeStep(100);
 
   //if voltage is more than 4V below or above setpoint, OUTPUT will be set to min or max respectively
-  myPID.setBangBang(40);
+  myPID.setBangBang(0, 50);
 
-  lightLegs(1);
+  lightLegs(28);
 }
 
 void loop()
@@ -99,6 +100,11 @@ void loop()
   voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   current = map(current, 0, 1023, 0, 682); // store current as amps*10
 
+  if (voltage > 100)
+  {
+    Serial.print("V:");
+    Serial.println(voltage / 10);
+  }
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
     power = (current * voltage) / 100; // power stored as watts
@@ -107,8 +113,6 @@ void loop()
     lastReadMillis = currentMillis;
     //    Serial.print(power);
     //    Serial.println(" watts");
-    //    Serial.print("V:");
-    //    Serial.println(voltage/10);
     //    Serial.print(" I:");
     //    Serial.println(current/10);
   }
@@ -122,7 +126,7 @@ void loop()
       // digitalWrite(resetBtn, HIGH); //TODO
       lastMonth = now.minute(); //TODO change to month
     }
-    Serial.println(wattSecondsProduced);
+    //    Serial.println(wattSecondsProduced);
     lastMonthCheckMillis = currentMillis;
   }
 
@@ -137,6 +141,7 @@ void error(void)
 {
   Serial.print("Over Voltage Error");
   digitalWrite(relayPin, HIGH);
+  lightLegs(1);
   while (voltage > 80)
   {
     voltage = analogRead(voltagePin);
@@ -147,6 +152,8 @@ void error(void)
 
 void lightLegs(int nB)
 {
+  nB = 29 - nB;
+
   int oddSide = 0;
   int evenSide = 0;
 
