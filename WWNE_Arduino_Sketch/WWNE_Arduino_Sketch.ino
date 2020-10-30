@@ -5,20 +5,29 @@
 //  Date     : 8/17/2020                                        //
 //**************************************************************//
 #include "RTClib.h"
+#include <Adafruit_NeoPixel.h>
+#include "arduino-base/Libraries/Timer.h"
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//PIN ASSIGNMENTS
 const int clockPin = 3;
 const int dataPin = 2;
 const int latchPin = 4;
-const int voltagePin = A4;
-const int currentPin = A5;
+const int voltagePin = A2;
+const int currentPin = A3;
 const int relayPin = 13;
-const int powerOutageWatch A1;
+const int VdcMonitorPin = A1;
 const int incrementBtn = 6;
-const int resetBtn = 7;
-const long wattSecondsGoal = 120000;
+const int decrementBtn = 7;
+const int neoPin = 5;
+const long wattSecondsGoal = 10000;
 // RTC sda and scl attached to A4 and A5
 
 RTC_DS3231 rtc;
+Adafruit_NeoPixel strip(144, neoPin, NEO_RGB + NEO_KHZ800);
+
+Timer IncrementPress;
+Timer DecrementPress;
 
 long voltage = 0;
 long current;
@@ -27,7 +36,8 @@ int numBulbs = 1; // number of bulbs on per leg.
 int lastMonth;    //stores the last read value for month to compare for change
 int wattSecondsProduced;
 
-unsigned long currentMillis, lastReadMillis = 0, lastMonthCheckMillis = 0;
+// timing variables
+unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0, lastMonthCheckMillis = 0;
 
 void setup()
 {
@@ -56,37 +66,82 @@ void setup()
   pinMode(clockPin, OUTPUT);
   pinMode(voltagePin, INPUT);
   pinMode(currentPin, INPUT);
+  pinMode(VdcMonitorPin, INPUT);
   pinMode(latchPin, OUTPUT);
   pinMode(dataPin, OUTPUT);
   pinMode(incrementBtn, OUTPUT);
-  pinMode(resetBtn, OUTPUT);
+  pinMode(decrementBtn, OUTPUT);
+
+  IncrementPress.setup([](boolean running, boolean ended, unsigned long timeElapsed) {
+    if (running == true)
+    {
+      digitalWrite(incrementBtn, HIGH);
+    }
+    if (ended == true)
+    {
+      digitalWrite(incrementBtn, LOW);
+    }
+  },
+                       600);
+
+  DecrementPress.setup([](boolean running, boolean ended, unsigned long timeElapsed) {
+    if (running == true)
+    {
+      digitalWrite(decrementBtn, HIGH);
+    }
+    if (ended == true)
+    {
+      digitalWrite(decrementBtn, LOW);
+    }
+  },
+                       5005);
 
   lightLegs(1);
+  Serial.println("Here we go...!");
+
+  strip.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();  // Turn OFF all pixels ASAP  }
 }
 
 void loop()
 {
+  IncrementPress.update();
+  DecrementPress.update();
 
   if (wattSecondsProduced > wattSecondsGoal)
   {
     Serial.println("increment button!");
-    // digitalWrite(incrementBtn, HIGH); //TODO
+    IncrementPress.start();
     wattSecondsProduced = 0;
+    strip.clear();
+    strip.show();
   }
 
   currentMillis = millis();
   voltage = analogRead(voltagePin);
   current = analogRead(currentPin);
 
-  voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
-  current = map(current, 0, 1023, 0, 682); // store current as amps*10
-
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
+    voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
+    current = map(current, 0, 1023, 0, 682); // store current as amps*10
+    if (voltage > 100)
+      Serial.println(voltage);
 
-    power = (current * voltage) / 100; // power stored as watts
-    power = 50;
-    wattSecondsProduced = wattSecondsProduced + (power / 10);
+    if (voltage > 230)
+      error();
+
+    // power = (current * voltage) / 100; // power stored as watts
+    // power = 50;
+    wattSecondsProduced = wattSecondsProduced + 200;
+    int pixels = map(wattSecondsProduced, 0, wattSecondsGoal, 0, 144);
+    pixels = constrain(pixels, 0, 144);
+    for (int i = 0; i < pixels; i++)
+    {
+      strip.setPixelColor(i, 0, 0, 20);
+    }
+    strip.show();
+
     lastReadMillis = currentMillis;
     //    Serial.print(power);
     //    Serial.println(" watts");
@@ -94,7 +149,23 @@ void loop()
     //    Serial.println(voltage/10);
     //    Serial.print(" I:");
     //    Serial.print(current/10);
-    //    Serial.print("   L1:");
+  }
+
+  if ((currentMillis - lastUpdateMillis) > 50)
+  {
+    // if (voltage < 130)
+    //   numBulbs--;
+    if (voltage < 145)
+      numBulbs--;
+    if (voltage > 175)
+      numBulbs++;
+    // if (voltage > 180)
+    //   numBulbs++;
+
+    numBulbs = constrain(numBulbs, 1, 28);
+    lightLegs(numBulbs);
+
+    lastUpdateMillis = currentMillis;
   }
 
   if ((currentMillis - lastMonthCheckMillis) > 1000) //TODO edit so it only checks every 5 min or so.
@@ -103,34 +174,22 @@ void loop()
     if (now.minute() != lastMonth) //TODO change to month
     {
       Serial.println("New Month!");
-      // digitalWrite(resetBtn, HIGH); //TODO
+      DecrementPress.start();
+      wattSecondsProduced = 0;
+      strip.clear();
+      strip.show();
       lastMonth = now.minute(); //TODO change to month
     }
-    Serial.println(wattSecondsProduced);
 
     lastMonthCheckMillis = currentMillis;
   }
-
-  if (voltage < 120)
-    numBulbs--;
-  if (voltage < 130)
-    numBulbs--;
-  if (voltage > 160)
-    numBulbs++;
-  if (voltage > 180)
-    numBulbs++;
-
-  numBulbs = constrain(numBulbs, 1, 28);
-  lightLegs(numBulbs);
-
-  if (voltage > 230)
-    error();
 }
 
 void error(void)
 {
-  //  Serial.print("Over Voltage Error");
+  Serial.print("Over Voltage Error");
   digitalWrite(relayPin, HIGH);
+  lightLegs(28);
   while (voltage > 80)
   {
     voltage = analogRead(voltagePin);
