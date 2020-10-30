@@ -1,0 +1,3 @@
+[submodule "WWNE_Arduino_Sketch/arduino-base"]
+	path = WWNE_Arduino_Sketch/arduino-base
+	url = https://github.com/scimusmn/arduino-base
