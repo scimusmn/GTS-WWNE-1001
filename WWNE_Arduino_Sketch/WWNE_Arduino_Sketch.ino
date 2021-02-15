@@ -202,10 +202,10 @@ void lightLegs(int numberOfBulbs) {
   // ground latchPin and hold low for as long as you are transmitting
   digitalWrite(latchPin, 0);
   // count up on GREEN LEDs
-  shiftOut(dataPin, clockPin, MSBFIRST, byte(evenSide));
-  shiftOut(dataPin, clockPin, MSBFIRST, byte(evenSide >> 8));
   shiftOut(dataPin, clockPin, MSBFIRST, byte(oddSide));
   shiftOut(dataPin, clockPin, MSBFIRST, byte(oddSide >> 8));
+  shiftOut(dataPin, clockPin, MSBFIRST, byte(evenSide));
+  shiftOut(dataPin, clockPin, MSBFIRST, byte(evenSide >> 8));
   // return the latch pin high to signal chip that it
   // no longer needs to listen for information
   digitalWrite(latchPin, 1);
