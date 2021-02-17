@@ -7,6 +7,7 @@
 #include <Adafruit_NeoPixel.h>
 
 #include "RTClib.h"
+#include "arduino-base/Libraries/Averager.h"
 #include "arduino-base/Libraries/Timer.h"
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -28,6 +29,7 @@ Adafruit_NeoPixel strip(144, neoPin, NEO_RGB + NEO_KHZ800);
 
 Timer IncrementPress;
 Timer DecrementPress;
+Averager averager;
 
 long voltage = 0;
 long current;
@@ -44,6 +46,7 @@ unsigned long lastMonthCheckMillis = 0;
 void setup() {
   // Start Serial for debuging purposes
   Serial.begin(115200);
+  averager.setup(40);
 
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC");
@@ -73,9 +76,6 @@ void setup() {
 
   IncrementPress.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
-        if (running == true) {
-          digitalWrite(incrementBtn, HIGH);
-        }
         if (ended == true) {
           digitalWrite(incrementBtn, LOW);
         }
@@ -84,9 +84,6 @@ void setup() {
 
   DecrementPress.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
-        if (running == true) {
-          digitalWrite(decrementBtn, HIGH);
-        }
         if (ended == true) {
           digitalWrite(decrementBtn, LOW);
         }
@@ -97,15 +94,20 @@ void setup() {
   Serial.println("Here we go...!");
 
   strip.begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();   // Turn OFF all pixels ASAP  }
+  strip.show();   // Turn OFF all pixels
 }
 
 void loop() {
   IncrementPress.update();
   DecrementPress.update();
 
+  voltage = analogRead(voltagePin);
+  voltage = map(voltage, 0, 1023, 0, 412);  // store voltage as volts*10
+  averager.insertNewSample(voltage);
+
   if (wattSecondsProduced > wattSecondsGoal) {
-    Serial.println("increment button!");
+    // Serial.println("increment button!");
+    digitalWrite(incrementBtn, HIGH);
     IncrementPress.start();
     wattSecondsProduced = 0;
     strip.clear();
@@ -116,18 +118,17 @@ void loop() {
 
   if ((currentMillis - lastReadMillis) > 100)  // every 0.1 seconds
   {
-    voltage = analogRead(voltagePin);
-    Serial.print("read:");
-    Serial.println(voltage);
     current = analogRead(currentPin);
-    voltage = map(voltage, 0, 1023, 0, 412);  // store voltage as volts*10
     current = map(current, 0, 1023, 0, 682);  // store current as amps*10
 
-    if (voltage > 260) error();
+    //  Serial.print(power);
+    //  Serial.println(" watts");
+    //  Serial.print(" I:");
+    //  Serial.print(current/10);
 
     // power = (current * voltage) / 100; // power stored as watts
-    // power = 50;
-    wattSecondsProduced = wattSecondsProduced + 200;
+    // wattSecondsProduced = wattSecondsProduced + ; // TODO tally power
+    // produced
     int pixels = map(wattSecondsProduced, 0, wattSecondsGoal, 0, 144);
     pixels = constrain(pixels, 0, 144);
     for (int i = 0; i < pixels; i++) {
@@ -136,13 +137,15 @@ void loop() {
     strip.show();
 
     lastReadMillis = currentMillis;
-    //    Serial.print(power);
-    //  Serial.println(" watts");
-    //    Serial.print(" I:");
-    //    Serial.print(current/10);
   }
 
   if ((currentMillis - lastUpdateMillis) > 50) {
+    voltage = averager.calculateAverage();
+    if (voltage > 200) {
+      Serial.print("V:");
+      Serial.println(voltage);
+    }
+    if (voltage > 260) error();
     // if (voltage < 130)
     //   numBulbs--;
     if (voltage < 145) numBulbs--;
@@ -152,19 +155,18 @@ void loop() {
 
     numBulbs = constrain(numBulbs, 1, 28);
 
-    Serial.print("#B:");
-    Serial.print(numBulbs);
-    Serial.print(", ");
     lightLegs(numBulbs);
 
     lastUpdateMillis = currentMillis;
   }
+
   // TODO edit so it only checks every 5 min or so.
   if ((currentMillis - lastMonthCheckMillis) > 1000) {
     DateTime now = rtc.now();
     if (now.minute() != lastMonth)  // TODO change to month
     {
-      Serial.println("New Month!");
+      // Serial.println("New Month!");
+      digitalWrite(decrementBtn, HIGH);
       DecrementPress.start();
       wattSecondsProduced = 0;
       strip.clear();
@@ -179,7 +181,8 @@ void error(void) {
   Serial.print("Over Voltage Error");
   lightLegs(28);
   digitalWrite(relayPin, HIGH);
-  while (voltage > 110) {
+  delay(1000);
+  while (voltage > 50) {
     voltage = analogRead(voltagePin);
     voltage = map(voltage, 0, 1023, 0, 412);  // store voltage as volts*10
   }
