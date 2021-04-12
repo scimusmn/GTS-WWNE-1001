@@ -19,9 +19,11 @@ const int neoPin = 5;
 const int incrementBtn = 6;
 const int decrementBtn = 7;
 const int relayPin = 10;
+const int relayPin2 = 11;
 const int VdcMonitorPin = A1;
 const int voltagePin = A2;
 const int currentPin = A3;
+int resist = 0;
 // RTC sda and scl attached to A4 and A5
 
 RTC_DS3231 rtc;
@@ -35,36 +37,40 @@ long voltage = 0;
 long current;
 long power;
 const long wattSecondsGoal = 10000;
-int numBulbs = 1;  // number of bulbs on per leg.
-int lastMonth;     // stores the last read value for month to compare for change
+int numBulbs = 1; // number of bulbs on per leg.
+int lastMonth;    // stores the last read value for month to compare for change
 int wattSecondsProduced;
 
 // timing variables
 unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0;
 unsigned long lastMonthCheckMillis = 0;
 
-void setup() {
+void setup()
+{
   // Start Serial for debuging purposes
   Serial.begin(115200);
   averager.setup(40);
 
-  if (!rtc.begin()) {
+  if (!rtc.begin())
+  {
     Serial.println("Couldn't find RTC");
     Serial.flush();
     abort();
   }
 
-  if (rtc.lostPower()) {
+  if (rtc.lostPower())
+  {
     Serial.println("RTC lost power, let's set the time!");
     // When time needs to be set on a new device, or after a power loss, the
     // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // TODO ???
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // TODO ???
     // This line sets the RTC with an explicit date & time, for example to set
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
   pinMode(relayPin, OUTPUT);
+  pinMode(relayPin2, OUTPUT);
   pinMode(clockPin, OUTPUT);
   pinMode(voltagePin, INPUT);
   pinMode(currentPin, INPUT);
@@ -76,7 +82,8 @@ void setup() {
 
   IncrementPress.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
-        if (ended == true) {
+        if (ended == true)
+        {
           digitalWrite(incrementBtn, LOW);
         }
       },
@@ -84,7 +91,8 @@ void setup() {
 
   DecrementPress.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
-        if (ended == true) {
+        if (ended == true)
+        {
           digitalWrite(decrementBtn, LOW);
         }
       },
@@ -93,19 +101,21 @@ void setup() {
   lightLegs(1);
   Serial.println("Here we go...!");
 
-  strip.begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();   // Turn OFF all pixels
+  strip.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();  // Turn OFF all pixels
 }
 
-void loop() {
+void loop()
+{
   IncrementPress.update();
   DecrementPress.update();
 
   voltage = analogRead(voltagePin);
-  voltage = map(voltage, 0, 1023, 0, 412);  // store voltage as volts*10
+  voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   averager.insertNewSample(voltage);
 
-  if (wattSecondsProduced > wattSecondsGoal) {
+  if (wattSecondsProduced > wattSecondsGoal)
+  {
     // Serial.println("increment button!");
     digitalWrite(incrementBtn, HIGH);
     IncrementPress.start();
@@ -116,10 +126,10 @@ void loop() {
 
   currentMillis = millis();
 
-  if ((currentMillis - lastReadMillis) > 100)  // every 0.1 seconds
+  if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
     current = analogRead(currentPin);
-    current = map(current, 0, 1023, 0, 682);  // store current as amps*10
+    current = map(current, 0, 1023, 0, 682); // store current as amps*10
 
     //  Serial.print(power);
     //  Serial.println(" watts");
@@ -131,7 +141,8 @@ void loop() {
     // produced
     int pixels = map(wattSecondsProduced, 0, wattSecondsGoal, 0, 144);
     pixels = constrain(pixels, 0, 144);
-    for (int i = 0; i < pixels; i++) {
+    for (int i = 0; i < pixels; i++)
+    {
       strip.setPixelColor(i, 0, 0, 20);
     }
     strip.show();
@@ -139,19 +150,22 @@ void loop() {
     lastReadMillis = currentMillis;
   }
 
-  if ((currentMillis - lastUpdateMillis) > 50) {
+  if ((currentMillis - lastUpdateMillis) > 50)
+  {
     voltage = averager.calculateAverage();
-    if (voltage > 200) {
+    if (voltage > 200)
+    {
       Serial.print("V:");
       Serial.println(voltage);
     }
-    if (voltage > 260) error();
-    // if (voltage < 130)
-    //   numBulbs--;
-    if (voltage < 145) numBulbs--;
-    if (voltage > 175) numBulbs++;
-    // if (voltage > 180)
-    //   numBulbs++;
+    if (voltage > 260)
+      error();
+
+    int bulbs = map(voltage, 160, 220, 1, 28);
+    if (bulbs > numBulbs)
+      numBulbs = bulbs;
+    if (voltage < 140)
+      numBulbs--;
 
     numBulbs = constrain(numBulbs, 1, 28);
 
@@ -161,9 +175,10 @@ void loop() {
   }
 
   // TODO edit so it only checks every 5 min or so.
-  if ((currentMillis - lastMonthCheckMillis) > 1000) {
+  if ((currentMillis - lastMonthCheckMillis) > 3000)
+  {
     DateTime now = rtc.now();
-    if (now.minute() != lastMonth)  // TODO change to month
+    if (now.minute() != lastMonth) // TODO change to month
     {
       // Serial.println("New Month!");
       digitalWrite(decrementBtn, HIGH);
@@ -171,33 +186,43 @@ void loop() {
       wattSecondsProduced = 0;
       strip.clear();
       strip.show();
-      lastMonth = now.minute();  // TODO change to month
+      lastMonth = now.minute(); // TODO change to month
     }
     lastMonthCheckMillis = currentMillis;
   }
 }
 
-void error(void) {
+void error(void)
+{
   Serial.print("Over Voltage Error");
   lightLegs(28);
   digitalWrite(relayPin, HIGH);
-  delay(1000);
-  while (voltage > 50) {
+  delay(1000);  
+  digitalWrite(relayPin2, HIGH);
+   delay(1000);  
+  while (voltage > 50)
+  {
     voltage = analogRead(voltagePin);
-    voltage = map(voltage, 0, 1023, 0, 412);  // store voltage as volts*10
+    voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
   }
   digitalWrite(relayPin, LOW);
+  digitalWrite(relayPin2, LOW);
 }
 
-void lightLegs(int numberOfBulbs) {
+void lightLegs(int numberOfBulbs)
+{
   int oddSide = 0;
   int evenSide = 0;
 
-  for (int j = 0; j < numberOfBulbs; j++) {
+  for (int j = 0; j < numberOfBulbs; j++)
+  {
     // if j is even shift even light bar
-    if ((j % 2) == 0) {
+    if ((j % 2) == 0)
+    {
       evenSide = (evenSide << 1) + 1;
-    } else {
+    }
+    else
+    {
       // j is odd shift odd light bar
       oddSide = (oddSide << 1) + 1;
     }
@@ -214,7 +239,8 @@ void lightLegs(int numberOfBulbs) {
   digitalWrite(latchPin, 1);
 }
 
-void shiftOut(int myDataPin, int myClockPin, byte myDataOut) {
+void shiftOut(int myDataPin, int myClockPin, byte myDataOut)
+{
   // This shifts 8 bits out MSB first,
   // on the rising edge of the clock,
   // clock idles low
@@ -232,16 +258,20 @@ void shiftOut(int myDataPin, int myClockPin, byte myDataOut) {
   // NOTICE THAT WE ARE COUNTING DOWN in our for loop
   // This means that %00000001 or "1" will go through such
   // that it will be pin Q0 that lights.
-  for (i = 7; i >= 0; i--) {
+  for (i = 7; i >= 0; i--)
+  {
     digitalWrite(myClockPin, 0);
 
     // if the value passed to myDataOut and a bitmask result
     // true then... so if we are at i=6 and our value is
     // %11010100 it would the code compares it to %01000000
     // and proceeds to set pinState to 1.
-    if (myDataOut & (1 << i)) {
+    if (myDataOut & (1 << i))
+    {
       pinState = 1;
-    } else {
+    }
+    else
+    {
       pinState = 0;
     }
 
