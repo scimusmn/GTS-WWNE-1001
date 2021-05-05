@@ -18,6 +18,7 @@ const int latchPin = 4;
 const int neoPin = 5;
 const int incrementBtn = 6;
 const int decrementBtn = 7;
+const int bellPin = 9;
 const int relayPin = 10;
 const int relayPin2 = 11;
 const int VdcMonitorPin = A1;
@@ -82,6 +83,7 @@ void setup()
   pinMode(latchPin, OUTPUT);
   pinMode(dataPin, OUTPUT);
   pinMode(incrementBtn, OUTPUT);
+  pinMode(bellPin, OUTPUT);
   pinMode(decrementBtn, OUTPUT);
 
   digitalWrite(relayPin, LOW);
@@ -92,6 +94,7 @@ void setup()
         if (ended == true)
         {
           digitalWrite(incrementBtn, LOW);
+          digitalWrite(bellPin, LOW);
         }
       },
       600);
@@ -135,6 +138,7 @@ void loop()
     wattSecondsProduced = 0;
     bagOMeter.clear();
     bagOMeter.show();
+    digitalWrite(bellPin, HIGH);
   }
 
   currentMillis = millis();
