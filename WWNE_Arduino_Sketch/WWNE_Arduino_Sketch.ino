@@ -23,25 +23,28 @@ const int relayPin2 = 11;
 const int VdcMonitorPin = A1;
 const int voltagePin = A2;
 const int currentPin = A3;
-int resist = 0;
+const int num_pixels = 98;
 // RTC sda and scl attached to A4 and A5
 
+// Configuration
+const int voltageCalibration = 412;
+const int currentCalibration = 682;
+const long wattSecondsPerBag = 10000; //126000;
+
 RTC_DS3231 rtc;
-Adafruit_NeoPixel strip(144, neoPin, NEO_RGB + NEO_KHZ800);
+Adafruit_NeoPixel bagOMeter(num_pixels, neoPin, NEO_RGB + NEO_KHZ800);
+Timer CounterIncrement;
+Timer CounterReset;
+Averager voltageAverager;
+Averager currentAverager;
 
-Timer IncrementPress;
-Timer DecrementPress;
-Averager averager;
-
+// Variables
 long voltage = 0;
 long current;
 long power;
-const long wattSecondsGoal = 10000;
+bool newMonthReset = false;
 int numBulbs = 1; // number of bulbs on per leg.
-int lastMonth;    // stores the last read value for month to compare for change
 int wattSecondsProduced;
-
-// timing variables
 unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0;
 unsigned long lastMonthCheckMillis = 0;
 
@@ -49,7 +52,8 @@ void setup()
 {
   // Start Serial for debuging purposes
   Serial.begin(115200);
-  averager.setup(40);
+  voltageAverager.setup(1);
+  currentAverager.setup(1);
 
   if (!rtc.begin())
   {
@@ -80,7 +84,10 @@ void setup()
   pinMode(incrementBtn, OUTPUT);
   pinMode(decrementBtn, OUTPUT);
 
-  IncrementPress.setup(
+  digitalWrite(relayPin, LOW);
+  digitalWrite(relayPin2, LOW);
+
+  CounterIncrement.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
         if (ended == true)
         {
@@ -89,11 +96,12 @@ void setup()
       },
       600);
 
-  DecrementPress.setup(
+  CounterReset.setup(
       [](boolean running, boolean ended, unsigned long timeElapsed) {
         if (ended == true)
         {
           digitalWrite(decrementBtn, LOW);
+          Serial.println("Reset Complete (new month)!");
         }
       },
       5005);
@@ -101,67 +109,69 @@ void setup()
   lightLegs(1);
   Serial.println("Here we go...!");
 
-  strip.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();  // Turn OFF all pixels
+  bagOMeter.begin(); // INITIALIZE NeoPixel bagOMeter object
+  bagOMeter.show();  // Turn OFF all pixels
 }
 
 void loop()
 {
-  IncrementPress.update();
-  DecrementPress.update();
+  CounterIncrement.update();
+  CounterReset.update();
 
-  voltage = analogRead(voltagePin);
-  voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
-  averager.insertNewSample(voltage);
+  //running average for voltage
+  int v = analogRead(voltagePin);
+  v = map(v, 0, 1023, 0, voltageCalibration); // store voltage as volts*10
+  voltageAverager.insertNewSample(v);
 
-  if (wattSecondsProduced > wattSecondsGoal)
+  //running average for current
+  int c = analogRead(currentPin);
+  c = map(c, 0, 1023, 0, currentCalibration); // store current as amps*10
+  currentAverager.insertNewSample(c);
+
+  if (wattSecondsProduced > wattSecondsPerBag)
   {
-    // Serial.println("increment button!");
     digitalWrite(incrementBtn, HIGH);
-    IncrementPress.start();
+    CounterIncrement.start();
     wattSecondsProduced = 0;
-    strip.clear();
-    strip.show();
+    bagOMeter.clear();
+    bagOMeter.show();
   }
 
   currentMillis = millis();
 
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
-    current = analogRead(currentPin);
-    current = map(current, 0, 1023, 0, 682); // store current as amps*10
 
-    //  Serial.print(power);
-    //  Serial.println(" watts");
-    //  Serial.print(" I:");
-    //  Serial.print(current/10);
-
-    // power = (current * voltage) / 100; // power stored as watts
-    // wattSecondsProduced = wattSecondsProduced + ; // TODO tally power
-    // produced
-    int pixels = map(wattSecondsProduced, 0, wattSecondsGoal, 0, 144);
-    pixels = constrain(pixels, 0, 144);
-    for (int i = 0; i < pixels; i++)
+    // Serial.print(power);
+    // Serial.println(" watts");
+    // Serial.print(" I:");
+    // Serial.print(current / 10);
+    voltage = voltageAverager.calculateAverage();
+    current = currentAverager.calculateAverage();
+    power = ((current / 10) * (voltage / 10));              // power stored as watts
+    wattSecondsProduced = wattSecondsProduced + power / 10; //wattSecondsProduced updated every 0.1 seconds
+    int pixels = map(wattSecondsProduced, 0, wattSecondsPerBag, 0, num_pixels);
+    pixels = constrain(pixels, 0, num_pixels);
+    for (int i = 0; i <= pixels; i++)
     {
-      strip.setPixelColor(i, 0, 0, 20);
+      bagOMeter.setPixelColor(num_pixels - i, 20, 20, 0);
     }
-    strip.show();
+    bagOMeter.show();
 
     lastReadMillis = currentMillis;
   }
 
   if ((currentMillis - lastUpdateMillis) > 50)
   {
-    voltage = averager.calculateAverage();
-    if (voltage > 200)
-    {
-      Serial.print("V:");
-      Serial.println(voltage);
-    }
-    if (voltage > 260)
-      error();
+    Serial.print("V:");
+    Serial.println(voltage / 10);
+    Serial.print(", I:");
+    Serial.println(current / 10);
 
-    int bulbs = map(voltage, 160, 220, 1, 28);
+    if (voltage > 260)
+      overVoltage();
+
+    int bulbs = map(voltage, 170, 240, 1, 28);
     if (bulbs > numBulbs)
       numBulbs = bulbs;
     if (voltage < 140)
@@ -174,36 +184,55 @@ void loop()
     lastUpdateMillis = currentMillis;
   }
 
-  // TODO edit so it only checks every 5 min or so.
+  // Every 5 min check if it's a
   if ((currentMillis - lastMonthCheckMillis) > 3000)
   {
     DateTime now = rtc.now();
-    if (now.minute() != lastMonth) // TODO change to month
+    //if it's the 1st of the month and has not been reset.
+    if ((now.day() == 1) && (!newMonthReset))
     {
-      // Serial.println("New Month!");
+      Serial.println("New Month");
       digitalWrite(decrementBtn, HIGH);
-      DecrementPress.start();
+      CounterReset.start();
       wattSecondsProduced = 0;
-      strip.clear();
-      strip.show();
-      lastMonth = now.minute(); // TODO change to month
+      bagOMeter.clear();
+      bagOMeter.show();
+      newMonthReset = true;
     }
+    if (now.day() != 1)
+      newMonthReset = false;
     lastMonthCheckMillis = currentMillis;
+
+    // Serial.print(now.month());
+    // Serial.print("/");
+    // Serial.print(now.day());
+    // Serial.print("/");
+    // Serial.print(now.year());
+    // Serial.print("  ");
+    // Serial.print(now.hour());
+    // Serial.print(":");
+    // Serial.print(now.minute());
+    // Serial.print("  wattMin:");
+    // Serial.println(wattSecondsProduced / 60);
   }
 }
 
-void error(void)
+void overVoltage(void)
 {
   Serial.print("Over Voltage Error");
   lightLegs(28);
   digitalWrite(relayPin, HIGH);
-  delay(1000);  
   digitalWrite(relayPin2, HIGH);
-   delay(1000);  
-  while (voltage > 50)
+  delay(1000);
+  while (voltageAverager.calculateAverage() > 50)
   {
+    Serial.print("V:");
+    Serial.print(voltage / 10);
+    Serial.print(", I:");
+    Serial.println(current / 10);
     voltage = analogRead(voltagePin);
-    voltage = map(voltage, 0, 1023, 0, 412); // store voltage as volts*10
+    voltage = map(voltage, 0, 1023, 0, voltageCalibration); // store voltage as volts*10
+    voltageAverager.insertNewSample(voltage);
   }
   digitalWrite(relayPin, LOW);
   digitalWrite(relayPin2, LOW);
