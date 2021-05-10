@@ -30,7 +30,7 @@ const int num_pixels = 98;
 // Configuration
 const int voltageCalibration = 412;
 const int currentCalibration = 682;
-const long wattSecondsPerBag = 10000; //126000;
+const long wattSecondsPerBag = 3000; //126000;
 
 RTC_DS3231 rtc;
 Adafruit_NeoPixel bagOMeter(num_pixels, neoPin, NEO_RGB + NEO_KHZ800);
@@ -46,15 +46,15 @@ long power;
 bool newMonthReset = false;
 int numBulbs = 1; // number of bulbs on per leg.
 int wattSecondsProduced;
-unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0;
+unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0, lastSampleMillis = 0;
 unsigned long lastMonthCheckMillis = 0;
 
 void setup()
 {
   // Start Serial for debuging purposes
   Serial.begin(115200);
-  voltageAverager.setup(1);
-  currentAverager.setup(1);
+  voltageAverager.setup(20);
+  currentAverager.setup(20);
 
   if (!rtc.begin())
   {
@@ -118,18 +118,25 @@ void setup()
 
 void loop()
 {
+
+  currentMillis = millis();
   CounterIncrement.update();
   CounterReset.update();
 
-  //running average for voltage
-  int v = analogRead(voltagePin);
-  v = map(v, 0, 1023, 0, voltageCalibration); // store voltage as volts*10
-  voltageAverager.insertNewSample(v);
+  if ((currentMillis - lastSampleMillis) > 10) // every 0.1 seconds
+  {
+    //running average for voltage
+    int v = analogRead(voltagePin);
+    v = map(v, 0, 1023, 0, voltageCalibration); // store voltage as volts*10
+    voltageAverager.insertNewSample(v);
 
-  //running average for current
-  int c = analogRead(currentPin);
-  c = map(c, 0, 1023, 0, currentCalibration); // store current as amps*10
-  currentAverager.insertNewSample(c);
+    //running average for current
+    int c = analogRead(currentPin);
+    c = map(c, 0, 1023, 0, currentCalibration); // store current as amps*10
+    currentAverager.insertNewSample(c);
+
+    lastSampleMillis = currentMillis;
+  }
 
   if (wattSecondsProduced > wattSecondsPerBag)
   {
@@ -140,8 +147,6 @@ void loop()
     bagOMeter.show();
     digitalWrite(bellPin, HIGH);
   }
-
-  currentMillis = millis();
 
   if ((currentMillis - lastReadMillis) > 100) // every 0.1 seconds
   {
@@ -167,6 +172,9 @@ void loop()
 
   if ((currentMillis - lastUpdateMillis) > 50)
   {
+    
+    voltage = voltageAverager.calculateAverage();
+    current = currentAverager.calculateAverage();
     Serial.print("V:");
     Serial.println(voltage / 10);
     Serial.print(", I:");
