@@ -24,13 +24,13 @@ const int relayPin2 = 11;
 const int VdcMonitorPin = A1;
 const int voltagePin = A2;
 const int currentPin = A3;
-const int num_pixels = 98;
+const int num_pixels = 97;
 // RTC sda and scl attached to A4 and A5
 
 // Configuration
 const int voltageCalibration = 412;
 const int currentCalibration = 682;
-const long wattSecondsPerBag = 3000; //126000;
+const long wattSecondsPerBag = 126000; //126000 is = 35 kWh;
 
 RTC_DS3231 rtc;
 Adafruit_NeoPixel bagOMeter(num_pixels, neoPin, NEO_RGB + NEO_KHZ800);
@@ -90,7 +90,8 @@ void setup()
   digitalWrite(relayPin2, LOW);
 
   CounterIncrement.setup(
-      [](boolean running, boolean ended, unsigned long timeElapsed) {
+      [](boolean running, boolean ended, unsigned long timeElapsed)
+      {
         if (ended == true)
         {
           digitalWrite(incrementBtn, LOW);
@@ -100,7 +101,8 @@ void setup()
       600);
 
   CounterReset.setup(
-      [](boolean running, boolean ended, unsigned long timeElapsed) {
+      [](boolean running, boolean ended, unsigned long timeElapsed)
+      {
         if (ended == true)
         {
           digitalWrite(decrementBtn, LOW);
@@ -172,7 +174,7 @@ void loop()
 
   if ((currentMillis - lastUpdateMillis) > 50)
   {
-    
+
     voltage = voltageAverager.calculateAverage();
     current = currentAverager.calculateAverage();
     Serial.print("V:");
