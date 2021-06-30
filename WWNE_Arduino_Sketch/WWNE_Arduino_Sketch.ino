@@ -46,7 +46,6 @@ Averager currentAverager;
 long voltage = 0;
 long current;
 long power;
-int month;
 int theMonth;
 int numBulbs = 1; // number of bulbs on per leg.
 int wattSecondsProduced;
