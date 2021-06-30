@@ -46,6 +46,7 @@ Averager currentAverager;
 long voltage = 0;
 long current;
 long power;
+int month;
 int theMonth;
 int numBulbs = 1; // number of bulbs on per leg.
 int wattSecondsProduced;
@@ -79,7 +80,7 @@ void setup()
   }
 
   EEPROM.get(addrWatt, wattSecondsProduced);
-  EEPROM.put(addrMonth, theMonth);
+  EEPROM.get(addrMonth, theMonth);
 
   pinMode(relayPin, OUTPUT);
   pinMode(relayPin2, OUTPUT);
@@ -214,7 +215,7 @@ void loop()
   }
 
   // Every 5 min check if it's a
-  if ((currentMillis - lastMonthCheckMillis) > 3000)
+  if ((currentMillis - lastMonthCheckMillis) > 30000)
   {
     DateTime now = rtc.now();
     //if it's the 1st of the month and has not been reset.
