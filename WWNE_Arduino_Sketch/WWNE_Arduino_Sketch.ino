@@ -9,6 +9,7 @@
 #include "RTClib.h"
 #include "arduino-base/Libraries/Averager.h"
 #include "arduino-base/Libraries/Timer.h"
+#include <EEPROM.h>
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // PIN ASSIGNMENTS
@@ -25,6 +26,8 @@ const int VdcMonitorPin = A1;
 const int voltagePin = A2;
 const int currentPin = A3;
 const int num_pixels = 97;
+int addrWatt = 0;
+int addrMonth = 8;
 // RTC sda and scl attached to A4 and A5
 
 // Configuration
@@ -43,11 +46,12 @@ Averager currentAverager;
 long voltage = 0;
 long current;
 long power;
-bool newMonthReset = false;
+int theMonth;
 int numBulbs = 1; // number of bulbs on per leg.
 int wattSecondsProduced;
 unsigned long currentMillis, lastReadMillis = 0, lastUpdateMillis = 0, lastSampleMillis = 0;
 unsigned long lastMonthCheckMillis = 0;
+bool backedUp = false;
 
 void setup()
 {
@@ -73,6 +77,9 @@ void setup()
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
+
+  EEPROM.get(addrWatt, wattSecondsProduced);
+  EEPROM.put(addrMonth, theMonth);
 
   pinMode(relayPin, OUTPUT);
   pinMode(relayPin2, OUTPUT);
@@ -124,6 +131,14 @@ void loop()
   currentMillis = millis();
   CounterIncrement.update();
   CounterReset.update();
+
+  if ((analogRead(VdcMonitorPin) < 700) && !backedUp)
+  {
+    Serial.println("9V unplugged");
+    EEPROM.put(addrWatt, wattSecondsProduced);
+    EEPROM.put(addrMonth, theMonth);
+    backedUp = true;
+  }
 
   if ((currentMillis - lastSampleMillis) > 10) // every 0.1 seconds
   {
@@ -177,10 +192,10 @@ void loop()
 
     voltage = voltageAverager.calculateAverage();
     current = currentAverager.calculateAverage();
-    Serial.print("V:");
-    Serial.println(voltage / 10);
-    Serial.print(", I:");
-    Serial.println(current / 10);
+    // Serial.print("V:");
+    // Serial.println(voltage / 10);
+    // Serial.print(", I:");
+    // Serial.println(current / 10);
 
     if (voltage > 260)
       overVoltage();
@@ -203,7 +218,7 @@ void loop()
   {
     DateTime now = rtc.now();
     //if it's the 1st of the month and has not been reset.
-    if ((now.day() == 1) && (!newMonthReset))
+    if (now.month() != theMonth)
     {
       Serial.println("New Month");
       digitalWrite(decrementBtn, HIGH);
@@ -211,10 +226,8 @@ void loop()
       wattSecondsProduced = 0;
       bagOMeter.clear();
       bagOMeter.show();
-      newMonthReset = true;
+      theMonth = now.month();
     }
-    if (now.day() != 1)
-      newMonthReset = false;
     lastMonthCheckMillis = currentMillis;
 
     // Serial.print(now.month());
